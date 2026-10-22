@@ -139,6 +139,7 @@ The bridge has **no password**, so anyone on your network could send commands to
 |---|---|
 | *No Apple TV found* | Make sure it's on and on the same network (same Wi-Fi / VLAN). On macOS, check the Local Network permission (above). Or pass the IP: `.venv/bin/python pair.py --address 192.168.1.50`. |
 | Pairing failed | Check the PIN and try again. After a few wrong PINs the Apple TV makes you wait before it lets you try again. |
+| macOS: the installer says the bridge is running, but commands return *Apple TV not found* | macOS is blocking the background service from the local network. Turn on **Python** in System Settings → Privacy & Security → Local Network. Wait a minute, then restart the bridge with `launchctl kickstart -k gui/$(id -u)/com.companion.appletv-bridge`. The setting can take a minute to apply, so if the first restart still fails, try again. |
 | Buttons do nothing | Run the `curl` test above. If it fails, the bridge isn't running; check its log. If it works, check the button's URL and that Companion's HTTP connection is enabled. |
 | Worked, then stopped after the Apple TV was reset or replaced | Delete `config.json` and run the installer again to pair again. |
 | Volume buttons don't change the volume | The Apple TV can only change the volume when it controls the TV or speakers (HDMI-CEC, HomePod, or an IR-learned TV). |

@@ -6,9 +6,11 @@ Run pair.py once first; it writes config.json next to this file.
 """
 import argparse
 import asyncio
+import errno
 import json
 import logging
 import os
+import sys
 
 import pyatv
 from aiohttp import web
@@ -71,10 +73,27 @@ class Bridge:
         hosts = [self.address] if self.address else None
         found = await pyatv.scan(loop, identifier=self.device_id, hosts=hosts, storage=storage)
         if not found:
-            raise RuntimeError("Apple TV not found on the network")
+            raise RuntimeError("Apple TV not found on the network" + await self.diagnose())
         self.atv = await pyatv.connect(found[0], loop, storage=storage)
         self.atv.listener = self
         log.info("connected to %s", found[0].name)
+
+    async def diagnose(self):
+        """Explain a failed scan by trying a plain TCP connection to the Apple TV's AirPlay port."""
+        if not self.address:
+            return ""
+        try:
+            _, writer = await asyncio.wait_for(asyncio.open_connection(self.address, 7000), 3)
+            writer.close()
+            return f" ({self.address} answers on port 7000, so the network is fine; is the TV asleep or re-paired?)"
+        except asyncio.TimeoutError:
+            return f" ({self.address} didn't answer: check it's on and on the same network)"
+        except OSError as ex:
+            hint = ""
+            if sys.platform == "darwin" and ex.errno in (errno.EHOSTUNREACH, errno.EPERM, errno.EACCES):
+                hint = ("; macOS is probably blocking local network access: turn on Python in "
+                        "System Settings > Privacy & Security > Local Network, then restart the bridge")
+            return f" (connecting to {self.address} failed: {ex.strerror or ex}{hint})"
 
     # pyatv DeviceListener callbacks: drop the connection so the next press reconnects
     def connection_lost(self, exception):
