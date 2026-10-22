@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+*.pyc
+config.json
+pin.txt
+bridge.log
+.DS_Store
