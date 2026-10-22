@@ -14,12 +14,27 @@ import sys
 
 import pyatv
 from aiohttp import web
+from pyatv.exceptions import ConnectionFailedError, ConnectionLostError
 from pyatv.storage.file_storage import FileStorage
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CONFIG_FILE = os.path.join(HERE, "config.json")
 
 log = logging.getLogger("appletv-bridge")
+
+COMMAND_TIMEOUT = 3  # seconds before a command counts as failed
+VOLUME_CONFIRM_TIMEOUT = 1  # seconds to wait for the TV to report a new volume level
+
+
+async def unconfirmed(volume_change):
+    """pyatv sends the volume key, then waits for the TV to report the new level.
+    TVs whose volume isn't controlled by the Apple TV never report it, so a missing
+    confirmation means "sent", not "failed"."""
+    try:
+        await asyncio.wait_for(volume_change, VOLUME_CONFIRM_TIMEOUT)
+    except asyncio.TimeoutError:
+        log.info("volume key sent; the TV didn't report a new volume level")
+
 
 COMMANDS = {
     "up": lambda a: a.remote_control.up(),
@@ -38,8 +53,8 @@ COMMANDS = {
     "skip_backward": lambda a: a.remote_control.skip_backward(),
     "next": lambda a: a.remote_control.next(),
     "previous": lambda a: a.remote_control.previous(),
-    "volume_up": lambda a: a.audio.volume_up(),
-    "volume_down": lambda a: a.audio.volume_down(),
+    "volume_up": lambda a: unconfirmed(a.audio.volume_up()),
+    "volume_down": lambda a: unconfirmed(a.audio.volume_down()),
     "sleep": lambda a: a.power.turn_off(),
     "wake": lambda a: a.power.turn_on(),
 }
@@ -104,20 +119,33 @@ class Bridge:
         log.info("connection closed")
         self.atv = None
 
-    async def run(self, action):
+    def drop(self):
+        if self.atv is not None:
+            self.atv.close()
+        self.atv = None
+
+    async def run(self, action, timeout=COMMAND_TIMEOUT):
         async with self.lock:
             for attempt in (1, 2):
                 try:
                     if self.atv is None:
                         await self.connect()
-                    return await action(self.atv)
-                except Exception:
-                    log.exception("command failed (attempt %d)", attempt)
-                    if self.atv is not None:
-                        self.atv.close()
-                    self.atv = None
+                    return await asyncio.wait_for(action(self.atv), timeout)
+                except asyncio.TimeoutError:
+                    # the command may already have reached the TV, so never resend it
+                    log.warning("command timed out after %ss; not resending", timeout)
+                    self.drop()
+                    raise RuntimeError(f"Apple TV didn't respond within {timeout}s")
+                except (ConnectionLostError, ConnectionFailedError, OSError):
+                    # a stale connection: reconnect and send once more
+                    log.exception("connection problem (attempt %d)", attempt)
+                    self.drop()
                     if attempt == 2:
                         raise
+                except Exception:
+                    log.exception("command failed")
+                    self.drop()
+                    raise
 
 
 async def handle_command(request):
@@ -134,7 +162,7 @@ async def handle_command(request):
 async def handle_launch(request):
     app_id = request.match_info["app"]
     try:
-        await request.app["bridge"].run(lambda a: a.apps.launch_app(app_id))
+        await request.app["bridge"].run(lambda a: a.apps.launch_app(app_id), timeout=10)
     except Exception as ex:
         return web.json_response({"error": str(ex)}, status=502)
     return web.json_response({"ok": "launch", "app": app_id})
@@ -142,7 +170,7 @@ async def handle_launch(request):
 
 async def handle_apps(request):
     try:
-        apps = await request.app["bridge"].run(lambda a: a.apps.app_list())
+        apps = await request.app["bridge"].run(lambda a: a.apps.app_list(), timeout=15)
     except Exception as ex:
         return web.json_response({"error": str(ex)}, status=502)
     return web.json_response({"apps": sorted(({"name": x.name, "id": x.identifier} for x in apps),
