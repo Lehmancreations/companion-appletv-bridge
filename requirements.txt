@@ -1,1 +1,2 @@
 pyatv>=0.16,<0.19
+srptools<2  # srptools 2.0 made SRPClientSession(private) keyword-only, which breaks pyatv pairing
