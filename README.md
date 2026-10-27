@@ -166,6 +166,7 @@ python3 -m venv .venv
 ## Credits
 
 Built on [pyatv](https://github.com/postlund/pyatv) by Pierre Ståhl (MIT). Not affiliated with Apple or Bitfocus.
+
 Forked from (https://github.com/sempei13/companion-appletv-bridge) because his was not working on my computer
 
 ## License
