@@ -27,7 +27,7 @@ Works with Companion on **macOS, Windows, Linux and Raspberry Pi** (including Co
 Click **Code → Download ZIP** on this page and unzip it somewhere permanent, for example your home folder. Or clone it:
 
 ```
-git clone https://github.com/sempei13/companion-appletv-bridge.git
+git clone https://github.com/lehmancreations/companion-appletv-bridge.git
 cd companion-appletv-bridge
 ```
 
